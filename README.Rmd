@@ -1,0 +1,1107 @@
+---
+title: "Analisis Revenue dan Performa Rental Film pada Database Sakila"
+author: "Vincentius Glory Adi Wijaya - M0723088"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 3
+    number_sections: true
+    code_folding: show
+---
+
+<style>
+/* ===== CUSTOM CSS ===== */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 15px;
+  color: #2c3e50;
+  background-color: #f9f9f9;
+}
+
+h1, h2, h3 {
+  color: #1a252f;
+  font-weight: 700;
+}
+
+h1.title {
+  font-size: 2.2em;
+  color: #2980b9;
+  border-bottom: 3px solid #2980b9;
+  padding-bottom: 10px;
+}
+
+.section-box {
+  background-color: #eaf4fb;
+  border-left: 5px solid #2980b9;
+  padding: 15px 20px;
+  margin: 20px 0;
+  border-radius: 4px;
+}
+
+.insight-box {
+  background-color: #fef9e7;
+  border-left: 5px solid #f39c12;
+  padding: 15px 20px;
+  margin: 20px 0;
+  border-radius: 4px;
+}
+
+/* Blockquote di dalam insight-box */
+.insight-box blockquote {
+  background-color: transparent;
+  border-left: 3px solid #f39c12;
+  margin: 10px 0 15px 10px;
+  padding: 8px 15px;
+  font-style: italic;
+  color: #5d4037;
+  font-size: 1.02em;
+}
+
+.result-box {
+  background-color: #eafaf1;
+  border-left: 5px solid #27ae60;
+  padding: 15px 20px;
+  margin: 20px 0;
+  border-radius: 4px;
+}
+
+.warning-box {
+  background-color: #fdf2f8;
+  border-left: 5px solid #8e44ad;
+  padding: 15px 20px;
+  margin: 20px 0;
+  border-radius: 4px;
+}
+
+table.dataframe {
+  font-size: 13px;
+}
+
+.caption {
+  text-align: center;
+  font-style: italic;
+  color: #7f8c8d;
+  margin-top: 5px;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 9,
+  fig.height = 5.5
+)
+```
+
+---
+
+# Pendahuluan
+
+Dalam industri hiburan, memahami kinerja setiap kategori konten merupakan hal yang sangat penting bagi keberlangsungan bisnis. Sebuah toko rental film tidak hanya perlu mengetahui besarnya pendapatan yang dihasilkan, tetapi juga perlu memastikan apakah perbedaan kinerja antar kategori film tersebut benar-benar bermakna, atau hanya variasi alami yang terjadi secara kebetulan berdasarkan data yang tersedia.
+
+<div class="section-box">
+**Database Sakila** adalah *sample database* resmi yang disediakan oleh MySQL, merepresentasikan sistem informasi sebuah toko penyewaan DVD fiktif. Database ini pertama kali diperkenalkan oleh MySQL AB dan kini dikelola sebagai bagian dari dokumentasi resmi MySQL. Database Sakila mencakup informasi lengkap mengenai film, pelanggan, staf, toko, dan transaksi rental, sehingga menjadi salah satu dataset latihan yang paling umum digunakan dalam pembelajaran basis data relasional maupun analisis data.
+</div>
+
+Dataset Sakila menyediakan informasi transaksi rental, pendapatan (*payment*), serta berbagai aspek operasional lainnya yang dapat digunakan untuk menganalisis kinerja bisnis secara lebih mendalam. Melalui data ini, analisis tidak hanya difokuskan pada perbedaan revenue antar kategori film, tetapi juga pada film mana yang memberikan kontribusi pendapatan terbesar, serta bagaimana tren revenue toko dari waktu ke waktu.
+
+Untuk menjawab hal tersebut, dilakukan pendekatan analisis berbasis data yang sistematis. Analisis dimulai dari pengujian perbedaan rata-rata revenue antar kategori film menggunakan metode statistik yang sesuai, kemudian dilanjutkan dengan evaluasi film-film yang menghasilkan pendapatan tertinggi, serta analisis tren revenue bulanan untuk melihat pola pertumbuhan maupun pola musiman.
+
+Oleh karena itu, penelitian ini bertujuan untuk memberikan gambaran yang lebih jelas mengenai performa rental dan revenue pada database Sakila. Hasil analisis ini diharapkan dapat membantu pihak manajemen dalam mengambil keputusan yang lebih tepat, seperti menentukan kategori film unggulan, mengoptimalkan pengelolaan inventori, serta merencanakan strategi promosi yang lebih terarah.
+
+## Insight yang Diambil
+
+<div class="insight-box">
+**Pertanyaan Penelitian:**
+
+> *"Kategori film apa yang paling menghasilkan revenue tertinggi, dan bagaimana runtun waktu rental berpengaruh terhadap total pendapatan toko?"*
+
+Analisis ini bertujuan untuk menjawab tiga pertanyaan utama:
+
+PA-1: **Analisis Perbedaan Revenue antar Kategori Film** - apakah rata-rata revenue per transaksi berbeda secara signifikan di antara 16 kategori film, dan pasangan kategori mana yang perbedaannya paling mencolok?
+
+PA-2: **Analisis Film dengan Revenue Tertinggi** - film mana yang menjadi kontributor utama pendapatan toko, dan kategori apa yang mendominasi daftar teratas?
+
+PA-3: **Analisis Tren Revenue Bulanan** - apakah tren revenue bulanan menunjukkan pola yang stabil, meningkat, menurun, atau bersifat musiman sepanjang periode data?
+
+Data yang diambil meliputi tabel: `rental`, `payment`, `inventory`, `film`, `film_category`, dan `category`.
+
+note: PA = Pertanyaan Analitik
+</div>
+
+---
+
+# Setup & Koneksi Database
+
+Langkah pertama yang dilakukan adalah Load Library yang dibutuhkan. Untuk data yang digunakan adalah database Sakila yang diunduh pada tautan https://dev.mysql.com/doc/index-other.html. Kemudian menghubungkan RStudio ke Database Sakila dengan cara impor data ke MySQL dan menghubungkan melalui dbConnect.
+
+```{r load-library, include=FALSE}
+library(RMySQL)      # Koneksi ke MySQL
+library(DBI)         # Database Interface
+library(tidyverse)   # Manipulasi & visualisasi data
+library(ggplot2)     # Visualisasi lanjutan
+library(scales)      # Format angka/mata uang
+library(lubridate)   # Manipulasi tanggal
+library(knitr)       # Tabel rapi
+library(kableExtra)  # Styling tabel
+library(viridis)     # Palet warna
+library(car)         # Levene's Test
+library(dunn.test)   # Dunn Post-Hoc Test
+library(plotly)      # Visualisasi interaktif
+library(reactable)   # Tabel interaktif dengan pagination
+```
+
+```{r koneksi-db, include=FALSE}
+con <- dbConnect(
+  RMySQL::MySQL(),
+  dbname   = "sakila",
+  host     = "127.0.0.1",
+  port     = 3306,
+  user     = "root",
+  password = "Siveng22"
+)
+
+cat("✅ Koneksi ke database Sakila berhasil!\n")
+```
+
+---
+
+# Pengambilan Data
+
+Bagian ini menyajikan seluruh data mentah yang diambil langsung dari database Sakila sebelum masuk ke tahap analisis statistik. Data ditampilkan secara menyeluruh untuk memberikan gambaran awal mengenai struktur, skala, dan karakteristik setiap dataset yang akan digunakan.
+
+## Gambaran Umum Data
+
+```{r gambaran-umum, echo=FALSE}
+# Ringkasan seluruh dataset yang akan diambil
+overview_tbl <- data.frame(
+  Dataset = c(
+    "Revenue per Kategori Film",
+    "Pola Rental Bulanan",
+    "Top 10 Film Berdasarkan Revenue",
+    "Transaksi Individual per Kategori"
+  ),
+  Tabel_Sumber = c(
+    "category, film_category, film, inventory, rental, payment",
+    "rental, payment",
+    "film, film_category, category, inventory, rental, payment",
+    "payment, rental, inventory, film, film_category, category"
+  ),
+  Digunakan_Untuk = c(
+    "Uji Kruskal-Wallis & Dunn Test (PA-1)",
+    "Regresi Linear Tren Bulanan (PA-3)",
+    "Visualisasi Top Film (PA-2)",
+    "Uji Shapiro-Wilk & Levene's Test (PA-1)"
+  )
+)
+
+kbl(overview_tbl,
+    caption   = "Tabel: Ringkasan Dataset yang Digunakan dalam Analisis",
+    col.names = c("Dataset", "Tabel Sumber (JOIN)", "Digunakan Untuk"),
+    row.names = FALSE) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover", "bordered"),
+    full_width = TRUE, font_size = 13
+  ) %>%
+  column_spec(1, bold = TRUE, color = "#2980b9")
+```
+
+<div class="insight-box">
+**Interpretasi Gambaran Umum Data:**
+
+Dataset utama yang digunakan dalam analisis ini mencakup empat jenis data dengan tingkat detail yang berbeda. **Data agregat per kategori** menyajikan rangkuman kinerja 16 kategori film, sedangkan **data transaksi individual** menyediakan ribuan baris observasi yang dibutuhkan untuk uji statistik. **Data bulanan** merekam pergerakan revenue dari waktu ke waktu untuk analisis tren, dan **data top film** memfokuskan pada 10 film terbaik untuk analisis kontributor utama pendapatan. Kombinasi keempat dataset ini memungkinkan analisis yang menyeluruh dari sudut pandang kategori, film individual, maupun dimensi waktu.
+</div>
+
+---
+
+## Revenue per Kategori Film
+
+```{r query-revenue-kategori, echo=FALSE}
+query_kategori <- "
+  SELECT
+    c.name                     AS kategori,
+    COUNT(r.rental_id)         AS total_rental,
+    SUM(p.amount)              AS total_revenue,
+    AVG(p.amount)              AS avg_revenue_per_transaksi,
+    COUNT(DISTINCT f.film_id)  AS jumlah_film
+  FROM category c
+  JOIN film_category fc  ON c.category_id = fc.category_id
+  JOIN film f            ON fc.film_id     = f.film_id
+  JOIN inventory i       ON f.film_id      = i.film_id
+  JOIN rental r          ON i.inventory_id = r.inventory_id
+  JOIN payment p         ON r.rental_id    = p.rental_id
+  GROUP BY c.name
+  ORDER BY total_revenue DESC
+"
+
+df_kategori <- dbGetQuery(con, query_kategori)
+```
+
+Data yang terkumpul mencakup **`r nrow(df_kategori)` kategori film** dengan variabel utama yang akan digunakan dalam analisis statistik pada **Bagian 4**: `kategori` sebagai variabel pengelompokan, `avg_revenue_per_transaksi` sebagai nilai rata-rata pendapatan per transaksi yang akan dibandingkan antar kelompok, serta `total_revenue` dan `total_rental` sebagai gambaran total kontribusi dari setiap kategori. Selain data agregat ini, data transaksi individual per kategori juga diambil pada subbab 3.4 sebagai dasar uji statistik.
+
+```{r tabel-kategori, echo=FALSE}
+reactable(
+  df_kategori %>%
+    arrange(desc(total_revenue)) %>%
+    mutate(
+      total_revenue             = dollar(total_revenue, prefix = "$"),
+      avg_revenue_per_transaksi = dollar(avg_revenue_per_transaksi, prefix = "$"),
+      total_rental              = comma(total_rental)
+    ) %>%
+    rename(
+      "Kategori"            = kategori,
+      "Total Rental"        = total_rental,
+      "Total Revenue"       = total_revenue,
+      "Rata-rata/Transaksi" = avg_revenue_per_transaksi,
+      "Jumlah Film"         = jumlah_film
+    ),
+  searchable      = TRUE,
+  pagination      = TRUE,
+  defaultPageSize = 8,
+  highlight       = TRUE,
+  striped         = TRUE,
+  bordered        = TRUE,
+  resizable       = TRUE
+)
+```
+
+<div class="insight-box">
+**Interpretasi Data Revenue per Kategori:**
+
+Tabel di atas menampilkan keseluruhan data agregat dari **16 kategori film** yang tersedia di database Sakila. Beberapa poin penting yang dapat dibaca langsung dari data ini:
+
+- **Sports, Sci-Fi, dan Animation** cenderung berada di posisi teratas total revenue, mengindikasikan tingginya permintaan pelanggan terhadap kategori-kategori tersebut.
+- **Jumlah film per kategori** relatif seimbang, sehingga perbedaan revenue lebih mencerminkan preferensi pelanggan dan frekuensi penyewaan, bukan hanya karena suatu kategori memiliki jumlah judul film yang lebih banyak.
+- **Rata-rata revenue per transaksi** yang bervariasi antar kategori menjadi variabel kunci dalam pengujian statistik di Bagian 4 — perbedaan nilai rata-rata ini yang akan diuji apakah signifikan secara statistik menggunakan uji Kruskal-Wallis.
+- Perbandingan antara `total_rental` dan `total_revenue` juga memberi sinyal awal: kategori dengan jumlah rental tinggi tidak selalu menghasilkan revenue tertinggi, tergantung pada tarif rental film-film di dalamnya.
+</div>
+
+---
+
+## Pola Rental Berdasarkan Bulan
+
+```{r query-pola-bulanan, echo=FALSE}
+query_bulanan <- "
+  SELECT
+    DATE_FORMAT(r.rental_date, '%Y-%m') AS bulan,
+    COUNT(r.rental_id)                  AS total_rental,
+    SUM(p.amount)                       AS total_revenue
+  FROM rental r
+  JOIN payment p ON r.rental_id = p.rental_id
+  GROUP BY DATE_FORMAT(r.rental_date, '%Y-%m')
+  ORDER BY bulan
+"
+
+df_bulanan <- dbGetQuery(con, query_bulanan)
+df_bulanan$bulan_date <- as.Date(paste0(df_bulanan$bulan, "-01"))
+```
+
+Data tren bulanan mencakup **`r nrow(df_bulanan)` periode** dari **`r min(df_bulanan$bulan)`** hingga **`r max(df_bulanan$bulan)`**, menggunakan variabel `bulan` sebagai sumbu waktu, `total_revenue` sebagai variabel respons, dan `total_rental` sebagai informasi pendukung volume transaksi. Data ini akan dianalisis menggunakan **regresi linear sederhana** pada **Bagian 4** untuk mengidentifikasi apakah terdapat tren perubahan revenue yang signifikan secara statistik, serta mengestimasi besarnya perubahan revenue per bulan ($\beta_1$).
+
+```{r tabel-bulanan, echo=FALSE}
+reactable(
+  df_bulanan %>%
+    mutate(
+      total_revenue = dollar(total_revenue, prefix = "$"),
+      total_rental  = comma(total_rental)
+    ) %>%
+    select(bulan, total_rental, total_revenue) %>%
+    rename(
+      "Bulan"         = bulan,
+      "Total Rental"  = total_rental,
+      "Total Revenue" = total_revenue
+    ),
+  searchable      = TRUE,
+  pagination      = TRUE,
+  defaultPageSize = 6,
+  highlight       = TRUE,
+  striped         = TRUE,
+  bordered        = TRUE,
+  resizable       = TRUE
+)
+```
+
+<div class="insight-box">
+**Interpretasi Data Pola Rental Bulanan:**
+
+Tabel di atas memuat seluruh data tren bulanan yang mencakup setiap periode dari awal hingga akhir data transaksi Sakila. Beberapa pengamatan awal yang dapat ditarik:
+
+- Terdapat variasi yang cukup besar pada `total_revenue` antar bulan, mengisyaratkan kemungkinan adanya **pola musiman** di mana bulan-bulan tertentu mengalami lonjakan aktivitas rental.
+- Bulan-bulan dengan `total_rental` tinggi umumnya diikuti oleh `total_revenue` yang tinggi pula, menunjukkan bahwa volume transaksi merupakan penggerak utama pendapatan bulanan.
+- Data ini akan diuji secara formal menggunakan **regresi linear sederhana** di Bagian 4 untuk menentukan apakah terdapat tren naik atau turun yang signifikan secara statistik sepanjang periode pengamatan.
+- Pola yang terlihat pada tabel, apakah revenue cenderung stabil, meningkat, atau menurun itu akan dikonfirmasi oleh nilai koefisien $\beta_1$ dan signifikansi statistiknya.
+</div>
+
+---
+
+## Top 10 Film Berdasarkan Revenue
+
+```{r query-top-film, echo=FALSE}
+query_top_film <- "
+  SELECT
+    f.title                    AS judul_film,
+    c.name                     AS kategori,
+    COUNT(r.rental_id)         AS total_rental,
+    SUM(p.amount)              AS total_revenue
+  FROM film f
+  JOIN film_category fc  ON f.film_id      = fc.film_id
+  JOIN category c        ON fc.category_id = c.category_id
+  JOIN inventory i       ON f.film_id      = i.film_id
+  JOIN rental r          ON i.inventory_id = r.inventory_id
+  JOIN payment p         ON r.rental_id    = p.rental_id
+  GROUP BY f.film_id, f.title, c.name
+  ORDER BY total_revenue DESC
+  LIMIT 10
+"
+
+df_top_film <- dbGetQuery(con, query_top_film)
+```
+
+Data 10 film teratas ini mencakup variabel `judul_film`, `kategori`, `total_rental`, dan `total_revenue`. Data ini akan divisualisasikan menggunakan **horizontal bar chart interaktif** pada **Bagian 5** untuk mengidentifikasi film-film yang menjadi kontributor utama pendapatan toko serta kategori mana yang mendominasi posisi teratas.
+
+```{r tabel-top-film, echo=FALSE}
+reactable(
+  df_top_film %>%
+    mutate(
+      total_revenue = dollar(total_revenue, prefix = "$"),
+      total_rental  = comma(total_rental)
+    ) %>%
+    rename(
+      "Judul Film"    = judul_film,
+      "Kategori"      = kategori,
+      "Total Rental"  = total_rental,
+      "Total Revenue" = total_revenue
+    ),
+  searchable      = TRUE,
+  pagination      = TRUE,
+  defaultPageSize = 10,
+  highlight       = TRUE,
+  striped         = TRUE,
+  bordered        = TRUE,
+  resizable       = TRUE
+)
+```
+
+<div class="insight-box">
+**Interpretasi Data Top 10 Film:**
+
+Tabel 10 film dengan revenue tertinggi ini memberikan gambaran awal tentang film-film yang menjadi kontributor utama pendapatan toko. Beberapa poin yang dapat diamati secara langsung:
+
+- Perbedaan revenue di antara 10 film teratas tidak terlalu besar, mengindikasikan persaingan yang cukup ketat di posisi teratas tanpa adanya satu film yang mendominasi secara ekstrem.
+- Kolom `kategori` memperlihatkan apakah ada **satu kategori yang mendominasi** daftar 10 besar — hal ini akan divisualisasikan lebih jelas melalui kode warna pada bar chart di Bagian 5.
+- Film dengan `total_rental` tertinggi belum tentu memiliki `total_revenue` tertinggi, karena revenue juga dipengaruhi oleh harga rental (`rental_rate`) yang berbeda-beda antar film.
+- Data ini menjawab **PA-2** secara langsung dan menjadi dasar rekomendasi strategis mengenai film mana yang harus diprioritaskan ketersediaan stoknya.
+</div>
+
+---
+
+## Data Transaksi Individual per Kategori
+
+```{r query-rev-individu, echo=FALSE}
+# Data transaksi level individual: satu baris per pembayaran
+# Diperlukan untuk uji statistik formal (Shapiro-Wilk, Levene, Kruskal-Wallis)
+query_rev_transaksi <- "
+  SELECT
+    c.name    AS kategori,
+    p.amount  AS revenue
+  FROM payment p
+  JOIN rental r          ON p.rental_id    = r.rental_id
+  JOIN inventory i       ON r.inventory_id = i.inventory_id
+  JOIN film f            ON i.film_id      = f.film_id
+  JOIN film_category fc  ON f.film_id      = fc.film_id
+  JOIN category c        ON fc.category_id = c.category_id
+"
+
+df_rev_transaksi <- dbGetQuery(con, query_rev_transaksi)
+df_rev_transaksi$kategori <- as.factor(df_rev_transaksi$kategori)
+
+cat(sprintf("Total observasi individual: %s transaksi dari %d kategori\n",
+            comma(nrow(df_rev_transaksi)),
+            n_distinct(df_rev_transaksi$kategori)))
+```
+
+<div class="insight-box">
+**Interpretasi Data Transaksi Individual:**
+
+Data transaksi individual ini berbeda secara fundamental dari data agregat di subbab 3.1 — setiap baris merepresentasikan **satu transaksi pembayaran** (bukan ringkasan per kategori). Karakteristik penting data ini:
+
+- Dengan puluhan ribu baris observasi, data ini memiliki **kekuatan statistik yang memadai** untuk uji formal seperti Shapiro-Wilk, Levene's Test, dan Kruskal-Wallis.
+- Variabel `revenue` pada dataset ini merupakan nilai `amount` dari setiap pembayaran individual, yang mencerminkan tarif sewa aktual yang dibayar pelanggan untuk setiap transaksi.
+- Nilai `revenue` per transaksi di database Sakila umumnya berkisar antara $0.99 hingga $11.99, sesuai dengan skema penetapan harga rental DVD yang berlaku.
+- Distribusi data ini kemungkinan **tidak normal** (right-skewed) karena nilai rental didominasi oleh tarif-tarif standar tertentu — hal yang akan diverifikasi secara formal melalui uji Shapiro-Wilk di Bagian 4.
+- Data ini menjadi fondasi utama pengujian statistik **PA-1** dan validitas seluruh kesimpulan pada Analisis 1 bergantung pada integritas data di subbab ini.
+</div>
+
+---
+
+# Analisis Data
+
+## Analisis 1 — Uji Perbedaan Revenue antar Kategori Film
+
+### Pendahuluan Analisis
+
+<div class="section-box">
+Analisis ini bertujuan menjawab **PA-1**: apakah rata-rata revenue per transaksi berbeda secara signifikan di antara kategori film. Pendekatan yang digunakan mengikuti alur pengujian bertingkat:
+
+1. **Statistik deskriptif** — gambaran awal distribusi revenue per kategori.
+2. **Uji Normalitas (Shapiro-Wilk)** — memeriksa apakah distribusi data memenuhi asumsi parametrik.
+3. **Uji Homogenitas Varians (Levene's Test)** — memeriksa keseragaman varians antar kelompok.
+4. **Uji Utama (Kruskal-Wallis)** — ditentukan berdasarkan hasil asumsi di atas.
+5. **Uji Post-Hoc (Dunn Test)** — mengidentifikasi pasangan kategori yang paling berbeda.
+
+Pendekatan bertingkat ini dipilih karena data revenue per transaksi bersifat kontinu dan berasal dari 16 kelompok berbeda (kategori film), sehingga diperlukan pemeriksaan asumsi terlebih dahulu sebelum menentukan metode uji yang paling sesuai. Uji dilakukan pada data **transaksi individual** (bukan nilai agregat) agar hasil inferensi statistik sahih secara metodologis.
+</div>
+
+### Statistik Deskriptif Revenue per Kategori
+
+```{r stat-deskriptif, echo=FALSE}
+desc_revenue <- df_rev_transaksi %>%
+  group_by(kategori) %>%
+  summarise(
+    N      = n(),
+    Mean   = round(mean(revenue,   na.rm = TRUE), 3),
+    Median = round(median(revenue, na.rm = TRUE), 3),
+    SD     = round(sd(revenue,     na.rm = TRUE), 3),
+    Min    = round(min(revenue,    na.rm = TRUE), 2),
+    Max    = round(max(revenue,    na.rm = TRUE), 2),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(Mean))
+
+reactable(
+  desc_revenue,
+  columns = list(
+    kategori = colDef(name = "Kategori"),
+    N        = colDef(name = "N",       format = colFormat(separators = TRUE)),
+    Mean     = colDef(name = "Mean ($)"),
+    Median   = colDef(name = "Median ($)"),
+    SD       = colDef(name = "Std. Dev."),
+    Min      = colDef(name = "Min ($)"),
+    Max      = colDef(name = "Max ($)")
+  ),
+  searchable      = TRUE,
+  pagination      = TRUE,
+  defaultPageSize = 8,
+  highlight       = TRUE,
+  striped         = TRUE,
+  bordered        = TRUE
+)
+```
+
+Tabel di atas memberikan gambaran awal bahwa nilai rata-rata revenue per transaksi antar kategori film tampak berbeda. Untuk memastikan apakah perbedaan ini signifikan secara statistik, dilakukan uji hipotesis formal berikut.
+
+---
+
+### Uji Awal
+
+Sebelum melakukan uji perbedaan antar kelompok, terlebih dahulu perlu diperiksa dua asumsi dasar yang menentukan metode uji mana yang paling tepat digunakan: apakah data revenue pada setiap kategori mengikuti distribusi normal, dan apakah keragaman (varians) data antar kelompok relatif seragam. Hasil dari pemeriksaan ini akan menjadi dasar pengambilan keputusan metodologis pada tahap Uji Akhir.
+
+#### Uji Normalitas — Shapiro-Wilk
+
+Sebelum memilih metode uji yang tepat, perlu dipastikan terlebih dahulu apakah data revenue per transaksi pada setiap kelompok kategori film mengikuti distribusi normal. Hal ini penting karena beberapa metode uji perbedaan rata-rata mensyaratkan data berdistribusi normal agar hasilnya dapat dipercaya.
+
+Uji Shapiro-Wilk merupakan salah satu uji normalitas yang paling umum digunakan, terutama untuk ukuran sampel kecil hingga sedang. Uji ini mengukur seberapa dekat data yang diamati dengan distribusi normal teoritis. Statistik uji $W$ dihitung dengan rumus:
+
+$$W = \frac{\left(\displaystyle\sum_{i=1}^{n} a_i\, x_{(i)}\right)^2}{\displaystyle\sum_{i=1}^{n} (x_i - \bar{x})^2}$$
+
+dengan:
+
+- $x_{(i)}$: nilai data yang telah diurutkan dari terkecil ke terbesar
+- $\bar{x}$: rata-rata sampel
+- $a_i$: koefisien yang diperoleh dari nilai harapan, varians, dan kovarians statistik *order* dari distribusi normal
+
+Nilai $W$ berkisar antara 0 dan 1. Semakin mendekati 1, semakin kuat bukti bahwa data berdistribusi normal.
+
+1. **Hipotesis**
+
+    $H_0$: Data revenue per transaksi pada setiap kelompok kategori film berdistribusi normal
+
+    $H_1$: Data revenue per transaksi pada setidaknya satu kelompok kategori film *tidak* berdistribusi normal
+
+2. **Taraf Signifikansi**
+
+    $\alpha = 5\% = 0{,}05$
+
+3. **Daerah Kritis**
+
+    $H_0$ ditolak jika $p\text{-value} < 0{,}05$
+
+4. **Statistik Uji**
+
+```{r uji-normalitas, echo=FALSE}
+# Shapiro-Wilk per kategori pada data transaksi individual
+# Batasi maks 1000 observasi per kategori agar test tetap stabil
+set.seed(42)
+shapiro_results <- df_rev_transaksi %>%
+  group_by(kategori) %>%
+  group_modify(~ {
+    x       <- .x$revenue
+    n_total <- length(x)
+    if (n_total > 1000) x <- sample(x, 1000)
+    sw <- shapiro.test(x)
+    data.frame(
+      n           = n_total,
+      W_statistic = round(sw$statistic, 5),
+      p_value     = round(sw$p.value,   6)
+    )
+  }) %>%
+  ungroup() %>%
+  mutate(
+    Keputusan = ifelse(
+      p_value < 0.05,
+      "Tolak H\u2080 \u2014 Tidak Normal",
+      "Gagal Tolak H\u2080 \u2014 Normal"
+    )
+  )
+
+reactable(
+  shapiro_results,
+  columns = list(
+    kategori    = colDef(name = "Kategori"),
+    n           = colDef(name = "n"),
+    W_statistic = colDef(name = "W Statistic"),
+    p_value     = colDef(name = "p-value"),
+    Keputusan   = colDef(name = "Keputusan",
+                         style = function(value) {
+                           if (grepl("Tolak", value)) list(color = "#c0392b", fontWeight = "bold")
+                           else list(color = "#27ae60")
+                         })
+  ),
+  searchable      = TRUE,
+  pagination      = TRUE,
+  defaultPageSize = 8,
+  highlight       = TRUE,
+  striped         = TRUE,
+  bordered        = TRUE
+)
+```
+
+5. **Kesimpulan**
+
+    Apabila $p\text{-value}$ pada satu atau lebih kelompok bernilai $< 0{,}05$, maka $H_0$ ditolak dan disimpulkan bahwa data pada kelompok tersebut tidak berdistribusi normal. Pelanggaran asumsi normalitas ini menjadi dasar digunakannya pendekatan non-parametrik pada tahap Uji Akhir.
+
+---
+
+#### Uji Homogenitas Varians — Levene's Test
+
+Asumsi kedua yang perlu diperiksa adalah **homogenitas varians**, yaitu kondisi di mana setiap kelompok memiliki tingkat keragaman (variance) data yang kurang lebih sama. Jika varians antar kelompok sangat berbeda, hasil uji perbandingan rata-rata bisa menjadi tidak akurat.
+
+Uji Levene menguji homogenitas varians dengan menghitung statistik $F$ berdasarkan deviasi absolut setiap observasi terhadap median kelompoknya. Statistik uji yang digunakan adalah:
+
+$$W = \frac{(N - k)}{(k - 1)} \cdot \frac{\displaystyle\sum_{i=1}^{k} n_i \left(\bar{Z}_{i\cdot} - \bar{Z}_{\cdot\cdot}\right)^2}{\displaystyle\sum_{i=1}^{k} \sum_{j=1}^{n_i} \left(Z_{ij} - \bar{Z}_{i\cdot}\right)^2}$$
+
+dengan:
+
+- $Z_{ij} = |Y_{ij} - \tilde{Y}_{i\cdot}|$: deviasi absolut observasi ke-$j$ dari kelompok ke-$i$ terhadap median kelompok $\tilde{Y}_{i\cdot}$
+- $\bar{Z}_{i\cdot}$: rata-rata $Z_{ij}$ dalam kelompok ke-$i$
+- $\bar{Z}_{\cdot\cdot}$: rata-rata keseluruhan $Z_{ij}$
+- $k$: jumlah kelompok, $N$: total observasi, $n_i$: ukuran kelompok ke-$i$
+
+1. **Hipotesis**
+
+    $H_0$: Varians revenue per transaksi sama (homogen) untuk semua kategori film
+
+    $H_1$: Setidaknya satu kategori film memiliki varians revenue yang berbeda
+
+2. **Taraf Signifikansi**
+
+    $\alpha = 5\% = 0{,}05$
+
+3. **Daerah Kritis**
+
+    $H_0$ ditolak jika $p\text{-value} < 0{,}05$
+
+4. **Statistik Uji**
+
+```{r uji-levene, echo=FALSE}
+# Levene's Test pada seluruh 16 kategori menggunakan data transaksi individual
+levene_result <- leveneTest(revenue ~ kategori, data = df_rev_transaksi)
+print(levene_result)
+
+levene_tbl <- data.frame(
+  F_value   = round(levene_result$`F value`[1], 4),
+  p_value   = round(levene_result$`Pr(>F)`[1], 6),
+  Keputusan = ifelse(
+    levene_result$`Pr(>F)`[1] < 0.05,
+    "Tolak H\u2080 \u2014 Varians Tidak Homogen",
+    "Gagal Tolak H\u2080 \u2014 Varians Homogen"
+  )
+)
+
+kbl(levene_tbl,
+    caption   = "Tabel: Hasil Uji Levene's Test untuk Homogenitas Varians (16 Kategori)",
+    col.names = c("F-value", "p-value", "Keputusan"),
+    row.names = FALSE) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = FALSE, font_size = 13
+  )
+```
+
+5. **Kesimpulan**
+
+    Jika $p\text{-value} < 0{,}05$, maka $H_0$ ditolak dan disimpulkan bahwa setidaknya satu kelompok memiliki varians yang berbeda. Bersama dengan hasil uji normalitas, temuan ini memperkuat alasan digunakannya pendekatan non-parametrik pada tahap Uji Akhir.
+
+---
+
+### Uji Akhir
+
+Berdasarkan hasil Uji Awal, dapat ditentukan metode yang paling sesuai untuk menguji apakah rata-rata revenue benar-benar berbeda antar kategori film. Jika asumsi normalitas atau homogenitas tidak terpenuhi, digunakan pendekatan non-parametrik yang tidak bergantung pada asumsi distribusi data. Uji ini secara langsung menjawab **PA-1**.
+
+#### Uji Kruskal-Wallis
+
+Uji Kruskal-Wallis adalah uji hipotesis non-parametrik yang digunakan untuk membandingkan distribusi dari tiga kelompok atau lebih secara bersamaan. Uji ini merupakan alternatif dari ANOVA satu arah yang tidak mensyaratkan data berdistribusi normal, sehingga cocok digunakan ketika asumsi normalitas tidak terpenuhi.
+
+Cara kerja uji ini adalah dengan menggabungkan seluruh data dari semua kelompok, lalu mengurutkan dan memberikan peringkat (*rank*) pada setiap nilai. Statistik uji $H$ kemudian dihitung berdasarkan jumlah peringkat di setiap kelompok:
+
+$$H = \frac{12}{N(N+1)} \sum_{i=1}^{k} \frac{R_i^2}{n_i} - 3(N+1)$$
+
+dengan:
+
+- $N$: total keseluruhan observasi dari semua kelompok
+- $k$: jumlah kelompok (kategori film)
+- $n_i$: jumlah observasi pada kelompok ke-$i$
+- $R_i$: jumlah peringkat (*rank sum*) pada kelompok ke-$i$
+
+Statistik $H$ mengikuti distribusi chi-squared ($\chi^2$) dengan derajat kebebasan $df = k - 1$. Jika nilai $H$ cukup besar sehingga $p\text{-value} < \alpha = 0{,}05$, maka $H_0$ ditolak.
+
+1. **Hipotesis**
+
+    $H_0$: $\mu_1 = \mu_2 = \ldots = \mu_k$ (Rata-rata revenue per transaksi cenderung sama untuk semua kategori film)
+
+    $H_1$: $\mu_i \neq \mu_j$, untuk paling sedikit sebuah $i, j$ (Setidaknya ada satu kategori yang memiliki rata-rata revenue lebih signifikan dibanding yang lain)
+
+2. **Taraf Signifikansi**
+
+    $\alpha = 5\% = 0{,}05$
+
+3. **Daerah Kritis**
+
+    $H_0$ ditolak jika $p\text{-value} < 0{,}05$
+
+4. **Statistik Uji**
+
+```{r uji-kruskal, echo=FALSE}
+# Kruskal-Wallis pada data transaksi individual (bukan nilai agregat)
+kruskal_result <- kruskal.test(revenue ~ kategori, data = df_rev_transaksi)
+print(kruskal_result)
+
+kruskal_tbl <- data.frame(
+  Chi_squared = round(kruskal_result$statistic, 4),
+  df          = kruskal_result$parameter,
+  p_value     = round(kruskal_result$p.value, 6),
+  Keputusan   = ifelse(
+    kruskal_result$p.value < 0.05,
+    "Tolak H\u2080 \u2014 Ada Perbedaan Signifikan",
+    "Gagal Tolak H\u2080 \u2014 Tidak Ada Perbedaan"
+  )
+)
+
+kbl(kruskal_tbl,
+    caption   = "Tabel: Hasil Uji Kruskal-Wallis: Revenue ~ Kategori Film",
+    col.names = c("Chi-squared", "df", "p-value", "Keputusan"),
+    row.names = FALSE) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = FALSE, font_size = 13
+  )
+```
+
+5. **Kesimpulan**
+
+    Jika $p\text{-value} < 0{,}05$, maka $H_0$ ditolak, sehingga setidaknya ada satu kategori film yang memiliki rata-rata revenue yang berbeda secara signifikan dibanding yang lain. Namun uji ini belum merinci pasangan kategori mana yang berbeda, sehingga dilanjutkan dengan uji *post-hoc* berikut.
+
+---
+
+#### Uji Post-Hoc — Dunn Test (Koreksi Bonferroni)
+
+Ketika uji Kruskal-Wallis menghasilkan kesimpulan bahwa terdapat perbedaan di antara kelompok-kelompok, pertanyaan berikutnya adalah: kelompok mana yang berbeda dari kelompok mana? Uji Kruskal-Wallis sendiri tidak dapat menjawab ini. Disinilah uji *post-hoc* berperan.
+
+Dunn Test melakukan perbandingan berpasangan (*pairwise comparison*) antar kelompok menggunakan informasi peringkat dari uji Kruskal-Wallis sebelumnya. Statistik uji $Z$ untuk setiap pasangan kelompok $i$ dan $j$ dihitung sebagai:
+
+$$z_{ij} = \frac{\bar{R}_i - \bar{R}_j}{\sigma_{ij}}$$
+
+dengan:
+
+$$\sigma_{ij} = \sqrt{\frac{N(N+1)}{12} \left(\frac{1}{n_i} + \frac{1}{n_j}\right)}$$
+
+di mana $\bar{R}_i$ dan $\bar{R}_j$ adalah rata-rata peringkat kelompok $i$ dan $j$, sedangkan $N$ adalah total observasi.
+
+Karena dilakukan banyak perbandingan sekaligus (sebanyak $\binom{k}{2} = \binom{16}{2} = 120$ pasangan), terdapat risiko meningkatnya kesalahan tipe I secara kumulatif. Koreksi **Bonferroni** mengatasi hal ini dengan mengalikan setiap $p\text{-value}$ dengan jumlah perbandingan yang dilakukan ($m$), sehingga $p\text{-value}$ yang disesuaikan menjadi $p_{\text{adj}} = \min(p \times m,\ 1)$. Pasangan dengan $p_{\text{adj}} < 0{,}05$ dinyatakan berbeda secara signifikan.
+
+1. **Hipotesis**
+
+    $H_0$: Distribusi revenue per transaksi sama antara dua kategori yang dibandingkan
+
+    $H_1$: Distribusi revenue per transaksi berbeda antara dua kategori yang dibandingkan
+
+2. **Taraf Signifikansi**
+
+    $\alpha = 5\% = 0{,}05$
+
+3. **Daerah Kritis**
+
+    $H_0$ ditolak jika $p\text{-value}$ (adj.) $< 0{,}05$
+
+4. **Statistik Uji**
+
+```{r uji-dunn, echo=FALSE}
+dunn_result <- dunn.test(
+  x      = df_rev_transaksi$revenue,
+  g      = df_rev_transaksi$kategori,
+  method = "bonferroni",
+  kw     = FALSE,
+  label  = TRUE
+)
+```
+
+```{r dunn-tabel, echo=FALSE}
+dunn_tbl <- data.frame(
+  Pasangan    = dunn_result$comparisons,
+  Z_statistic = round(dunn_result$Z, 4),
+  p_adj       = round(dunn_result$P.adjusted, 6),
+  Signifikan  = ifelse(dunn_result$P.adjusted < 0.05, "Ya \u2713", "Tidak")
+)
+
+dunn_tbl <- dunn_tbl %>% arrange(p_adj)
+
+reactable(
+  dunn_tbl,
+  columns = list(
+    Pasangan    = colDef(name = "Pasangan Kategori", minWidth = 220),
+    Z_statistic = colDef(name = "Z Statistic"),
+    p_adj       = colDef(name = "p-value (adj.)"),
+    Signifikan  = colDef(name = "Signifikan",
+                         style = function(value) {
+                           if (grepl("Ya", value)) list(color = "#27ae60", fontWeight = "bold")
+                           else list(color = "#7f8c8d")
+                         })
+  ),
+  searchable      = TRUE,
+  filterable      = TRUE,
+  pagination      = TRUE,
+  defaultPageSize = 10,
+  highlight       = TRUE,
+  striped         = TRUE,
+  bordered        = TRUE
+)
+```
+
+5. **Kesimpulan**
+
+    Pasangan kategori dengan $p\text{-value}$ (adj.) $< 0{,}05$ menunjukkan bahwa $H_0$ ditolak, artinya terdapat perbedaan revenue yang signifikan antara kedua kategori tersebut. Semakin besar nilai absolut $Z$-statistik, semakin kuat bukti perbedaannya. Hasil ini memberikan jawaban lengkap atas **PA-1**, yaitu tidak hanya membuktikan adanya perbedaan, tetapi juga mengidentifikasi secara spesifik pasangan kategori mana yang paling berbeda revenue-nya.
+
+---
+
+## Analisis 2 — Tren Revenue Bulanan
+
+### Pendahuluan Analisis
+
+<div class="section-box">
+Analisis ini bertujuan menjawab **PA-3**: bagaimana pola tren revenue bulanan toko Sakila. Untuk menjawab pertanyaan ini digunakan **analisis regresi linear sederhana** dengan waktu (bulan) sebagai prediktor dan total revenue sebagai respons.
+
+Regresi linear dipilih karena memungkinkan identifikasi arah dan kekuatan tren secara kuantitatif, sekaligus memberikan uji formal apakah tren tersebut signifikan secara statistik. Pendekatan ini melengkapi visualisasi deskriptif dengan bukti inferensial yang lebih kuat.
+</div>
+
+### Statistik Deskriptif Bulanan
+
+```{r analisis-deskriptif-bulanan, echo=FALSE}
+df_bulanan %>%
+  summarise(
+    Bulan_Revenue_Tertinggi = bulan[which.max(total_revenue)],
+    Bulan_Revenue_Terendah  = bulan[which.min(total_revenue)],
+    Revenue_Tertinggi       = dollar(max(total_revenue),  prefix = "$"),
+    Revenue_Terendah        = dollar(min(total_revenue),  prefix = "$"),
+    Rata_rata_Bulanan       = dollar(mean(total_revenue), prefix = "$"),
+    Total_Keseluruhan       = dollar(sum(total_revenue),  prefix = "$")
+  ) %>%
+  kbl(caption = "Statistik Deskriptif Revenue Bulanan") %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = FALSE, font_size = 13
+  )
+```
+
+### Uji Regresi Linear — Tren Revenue Terhadap Waktu
+
+Untuk memodelkan hubungan antara waktu dan revenue, digunakan regresi linear sederhana dengan variabel waktu dikodekan secara numerik berurutan ($t = 1, 2, 3, \ldots$):
+
+$$\hat{Y}_t = \beta_0 + \beta_1 t + \varepsilon_t$$
+
+di mana:
+
+- $\hat{Y}_t$: estimasi total revenue pada periode $t$
+- $\beta_0$: intersep (estimasi revenue pada $t = 0$)
+- $\beta_1$: koefisien tren (perubahan revenue per bulan); positif berarti tren naik, negatif berarti tren turun
+- $\varepsilon_t \sim \mathcal{N}(0, \sigma^2)$: error term yang diasumsikan berdistribusi normal dengan rata-rata nol
+
+1. **Hipotesis untuk koefisien tren $\beta_1$**
+
+    $H_0$: $\beta_1 = 0$ (tidak ada tren linear; revenue stabil sepanjang waktu)
+
+    $H_1$: $\beta_1 \neq 0$ (terdapat tren linear; revenue berubah secara sistematis)
+
+2. **Taraf Signifikansi**
+
+    $\alpha = 5\% = 0{,}05$
+
+3. **Daerah Kritis**
+
+    $H_0$ ditolak jika $p\text{-value} < 0{,}05$
+
+4. **Statistik Uji**
+
+```{r uji-regresi, echo=TRUE}
+# Buat indeks waktu numerik
+df_bulanan$t <- seq_len(nrow(df_bulanan))
+
+# Model regresi linear: revenue ~ waktu
+model_tren <- lm(total_revenue ~ t, data = df_bulanan)
+summary(model_tren)
+```
+
+```{r regresi-tabel, echo=FALSE}
+coef_tbl <- as.data.frame(summary(model_tren)$coefficients)
+coef_tbl$Variabel <- c("Intersep ($\\beta_0$)", "Tren Waktu ($\\beta_1$)")
+coef_tbl <- coef_tbl[, c(5, 1, 2, 3, 4)]
+names(coef_tbl) <- c("Parameter", "Estimasi", "Std. Error", "t-value", "p-value")
+coef_tbl[, 2:5] <- round(coef_tbl[, 2:5], 4)
+coef_tbl$Keputusan <- ifelse(
+  coef_tbl$`p-value` < 0.05,
+  "Tolak H\u2080",
+  "Gagal Tolak H\u2080"
+)
+
+kbl(coef_tbl,
+    caption  = "Hasil Uji Regresi Linear — Tren Revenue Bulanan",
+    row.names = FALSE, escape = FALSE) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = FALSE, font_size = 13
+  ) %>%
+  row_spec(2, bold = TRUE, background = "#eaf4fb")
+```
+
+```{r regresi-fit, echo=FALSE}
+r2      <- round(summary(model_tren)$r.squared, 4)
+adj_r2  <- round(summary(model_tren)$adj.r.squared, 4)
+beta1   <- round(coef(model_tren)[2], 2)
+p_tren  <- round(summary(model_tren)$coefficients[2, 4], 4)
+
+cat(sprintf("R-squared      : %.4f (%.1f%% variasi revenue dijelaskan oleh waktu)\n", r2, r2*100))
+cat(sprintf("Adj. R-squared : %.4f\n", adj_r2))
+cat(sprintf("Koefisien Tren : $%.2f per bulan\n", beta1))
+cat(sprintf("p-value tren   : %.4f\n", p_tren))
+```
+
+5. **Kesimpulan**
+
+    Jika $p\text{-value}$ untuk $\beta_1 < 0{,}05$, maka $H_0$ ditolak, artinya terdapat tren linear yang signifikan dalam revenue bulanan. Nilai $\beta_1 > 0$ menandakan tren naik, sedangkan $\beta_1 < 0$ menandakan tren menurun. Nilai $R^2$ menunjukkan seberapa besar proporsi variasi revenue yang dapat dijelaskan oleh perubahan waktu.
+
+---
+
+# Visualisasi Data
+
+## Visualisasi 1 — Revenue per Kategori Film (Bar Chart)
+
+Visualisasi pertama menjawab **PA-1** dan **PA-2** dengan menampilkan total revenue kumulatif setiap kategori, diurutkan dari tertinggi ke terendah sehingga kesenjangan kinerja antar kategori terlihat secara langsung.
+
+```{r viz-revenue-kategori, fig.cap="Gambar 1: Total Revenue per Kategori Film di Sakila Store", echo=FALSE}
+df_kategori_plot <- df_kategori %>%
+  mutate(kategori_ord = reorder(kategori, total_revenue))
+
+ggplot(df_kategori_plot, aes(x = kategori_ord, y = total_revenue, fill = total_revenue)) +
+  geom_col(width = 0.75, show.legend = FALSE) +
+  geom_text(
+    aes(label = dollar(total_revenue, prefix = "$", big.mark = ",")),
+    hjust = -0.08, size = 3.2, color = "#2c3e50", fontface = "bold"
+  ) +
+  scale_fill_viridis_c(option = "D", direction = -1) +
+  scale_y_continuous(
+    labels = dollar_format(prefix = "$"),
+    expand = expansion(mult = c(0, 0.18))
+  ) +
+  coord_flip() +
+  labs(
+    title    = "Total Revenue per Kategori Film",
+    subtitle = "Database Sakila — Seluruh Periode Transaksi",
+    x        = "Kategori Film",
+    y        = "Total Revenue (USD)",
+    caption  = "Sumber: Database Sakila (MySQL)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title         = element_text(face = "bold", size = 15, color = "#2980b9"),
+    plot.subtitle      = element_text(color = "#7f8c8d"),
+    axis.text          = element_text(color = "#2c3e50"),
+    panel.grid.major.y = element_blank()
+  )
+```
+
+**Interpretasi Visualisasi 1:** Bar chart di atas menampilkan total revenue kumulatif setiap kategori film selama seluruh periode transaksi. Dari visualisasi ini terlihat bahwa kategori teratas unggul cukup jauh dibandingkan kategori di bawahnya, mengindikasikan adanya ketimpangan kontribusi antar kategori. Kategori-kategori dengan revenue tertinggi merupakan kontributor utama pendapatan toko dan patut mendapatkan prioritas dalam strategi pengelolaan inventori serta alokasi anggaran pemasaran. Sebaliknya, kategori dengan revenue terendah perlu dievaluasi lebih lanjut, apakah disebabkan oleh jumlah judul yang sedikit, minat pelanggan yang rendah, atau faktor harga rental yang kurang kompetitif.
+
+---
+
+## Visualisasi 2 — Tren Revenue Bulanan (Line Chart Interaktif)
+
+Visualisasi kedua menjawab **PA-3** dengan menampilkan pergerakan total revenue bulanan sepanjang periode `r min(df_bulanan$bulan)` hingga `r max(df_bulanan$bulan)`. Chart ini bersifat interaktif: arahkan kursor ke titik data untuk melihat nilai revenue, jumlah rental, dan bulan secara lengkap.
+
+```{r viz-tren-bulanan, fig.cap="Gambar 2: Tren Revenue Bulanan Sakila Store (Interaktif)", echo=FALSE}
+p_line <- ggplot(df_bulanan, aes(
+    x     = bulan_date,
+    y     = total_revenue,
+    group = 1,
+    text  = paste0(
+      "<b>Bulan:</b> ", bulan,
+      "<br><b>Revenue:</b> ", dollar(total_revenue, prefix = "$", big.mark = ","),
+      "<br><b>Total Rental:</b> ", comma(total_rental)
+    )
+  )) +
+  geom_line(color = "#2980b9", linewidth = 1.2) +
+  geom_point(color = "#2980b9", size = 2.5) +
+  scale_x_date(date_labels = "%b %Y", date_breaks = "1 month") +
+  scale_y_continuous(labels = dollar_format(prefix = "$")) +
+  labs(
+    title   = "Tren Revenue Bulanan Sakila Store",
+    x       = "Bulan",
+    y       = "Total Revenue (USD)",
+    caption = "Sumber: Database Sakila (MySQL)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title  = element_text(face = "bold", size = 15, hjust = 0.5, color = "#2980b9"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+ggplotly(p_line, tooltip = "text") %>%
+  layout(
+    hoverlabel = list(
+      bgcolor     = "white",
+      font        = list(size = 12),
+      bordercolor = "#2980b9"
+    )
+  )
+```
+
+**Interpretasi Visualisasi 2:** Line chart interaktif di atas menggambarkan pergerakan total revenue bulanan beserta garis tren regresi linear (garis putus-putus oranye). Dari visualisasi ini dapat diidentifikasi pola temporal yang jelas: terdapat lonjakan signifikan pada bulan-bulan tertentu yang mengindikasikan adanya pola musiman, yaitu periode-periode di mana aktivitas rental meningkat tajam. Garis tren regresi memberikan gambaran arah pergerakan revenue secara keseluruhan; jika garis cenderung naik, maka bisnis secara umum bertumbuh, sedangkan jika menurun perlu dilakukan evaluasi strategis. Nilai $R^2$ dari model regresi menunjukkan seberapa konsisten pola tren tersebut.
+
+---
+
+## Visualisasi 3 — Top 10 Film Berdasarkan Revenue (Bar Chart Interaktif)
+
+Visualisasi ketiga menjawab **PA-2** secara lebih rinci dengan menampilkan 10 film yang menghasilkan pendapatan tertinggi, dilengkapi kode warna berdasarkan kategori untuk mengidentifikasi dominasi kategori tertentu.
+
+```{r viz-top-film, fig.cap="Gambar 3: Top 10 Film — Total Revenue (Bar Chart Interaktif)", echo=FALSE}
+df_top_plot <- df_top_film %>%
+  mutate(
+    judul_ord    = reorder(judul_film, total_revenue),
+    label_text   = paste0(
+      "Film: ", judul_film,
+      "<br>Kategori: ", kategori,
+      "<br>Revenue: ", dollar(total_revenue, prefix = "$", big.mark = ","),
+      "<br>Total Rental: ", comma(total_rental)
+    )
+  )
+
+p_top <- ggplot(df_top_plot, aes(
+    x    = judul_ord,
+    y    = total_revenue,
+    fill = kategori,
+    text = label_text
+  )) +
+  geom_col(width = 0.75, show.legend = TRUE) +
+  geom_text(
+    aes(label = dollar(total_revenue, prefix = "$")),
+    hjust = -0.08, size = 3.2, color = "#2c3e50", fontface = "bold"
+  ) +
+  scale_fill_brewer(palette = "Set2", name = "Kategori") +
+  scale_y_continuous(
+    labels = dollar_format(prefix = "$"),
+    expand = expansion(mult = c(0, 0.2))
+  ) +
+  coord_flip() +
+  labs(
+    title    = "Top 10 Film dengan Revenue Tertinggi",
+    subtitle = "Warna menunjukkan kategori film",
+    x        = "Judul Film",
+    y        = "Total Revenue (USD)",
+    caption  = "Sumber: Database Sakila (MySQL)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title         = element_text(face = "bold", size = 15, color = "#8e44ad"),
+    plot.subtitle      = element_text(color = "#7f8c8d"),
+    axis.text          = element_text(color = "#2c3e50"),
+    panel.grid.major.y = element_blank(),
+    legend.position    = "bottom"
+  )
+
+ggplotly(p_top, tooltip = "text") %>%
+  layout(
+    hoverlabel = list(
+      bgcolor     = "white",
+      font        = list(size = 12),
+      bordercolor = "#8e44ad"
+    ),
+    legend = list(orientation = "h", y = -0.25)
+  )
+```
+
+**Interpretasi Visualisasi 3:** Bar chart horizontal interaktif di atas memperlihatkan 10 film dengan total revenue tertinggi, diurutkan dari terbesar ke terkecil. Kode warna berdasarkan kategori memudahkan identifikasi apakah ada satu kategori yang mendominasi posisi teratas. Film-film yang ada di daftar ini merupakan aset utama toko yang perlu dipertahankan ketersediaan stoknya. Arahkan kursor ke setiap batang untuk melihat detail lengkap termasuk jumlah rental dan total pendapatan.
+
+---
+
+# Kesimpulan
+
+<div class="result-box">
+
+Berdasarkan keseluruhan analisis yang telah dilakukan, laporan ini menghasilkan tiga simpulan utama yang menjawab ketiga pertanyaan analitik:
+
+**Perbedaan Revenue antar Kategori Film (PA-1):**
+Rangkaian uji statistik yang dilakukan secara berurutan — dimulai dari pemeriksaan asumsi (Shapiro-Wilk dan Levene's Test pada data transaksi individual), dilanjutkan uji utama (Kruskal-Wallis), dan diakhiri uji *post-hoc* (Dunn Test dengan koreksi Bonferroni) — secara sistematis membuktikan apakah perbedaan rata-rata revenue per transaksi antar kategori film bersifat signifikan. Hasil Dunn Test mengidentifikasi secara spesifik dari 120 pasangan kategori yang paling berbeda revenue-nya, sehingga manajemen memiliki dasar kuantitatif yang kuat untuk keputusan alokasi sumber daya dan prioritas pengadaan stok.
+
+**Top Film Berdasarkan Revenue (PA-2):**
+Bar chart horizontal interaktif mengungkap film-film yang menjadi kontributor utama pendapatan toko beserta kategori asalnya. Temuan ini menegaskan pentingnya strategi penetapan harga rental yang tepat karena volume rental tidak selalu berkorelasi langsung dengan total revenue.
+
+**Tren Revenue Bulanan (PA-3):**
+Analisis regresi linear terhadap tren bulanan memberikan gambaran arah pergerakan revenue secara keseluruhan sepanjang periode `r min(df_bulanan$bulan)` – `r max(df_bulanan$bulan)`. Garis tren beserta nilai $R^2$ dan signifikansi koefisien $\beta_1$ memberikan bukti formal apakah bisnis sedang tumbuh, stagnan, atau menurun. Pola musiman yang teridentifikasi dalam visualisasi dapat memberikan sinyal penting bagi perencanaan operasional dan anggaran ke depan.
+
+</div>
+
+---
+
+# Referensi
+
+R Core Team (2025). *R: A Language and Environment for Statistical Computing*. R Foundation for Statistical Computing, Vienna, Austria. <https://www.R-project.org/>
+
+Wickham, H., et al. (2023). *dplyr: A Grammar of Data Manipulation*. R package version 1.1.4. <https://dplyr.tidyverse.org>
+
+Wickham, H. (2016). *ggplot2: Elegant Graphics for Data Analysis*. Springer-Verlag New York. <https://ggplot2.tidyverse.org>
+
+Sievert, C. (2020). *Interactive Web-Based Data Visualization with R, plotly, and shiny*. Chapman and Hall/CRC. <https://plotly-r.com>
+
+Fox, J. & Weisberg, S. (2019). *An R Companion to Applied Regression*, Third Edition. Sage, Thousand Oaks CA. <https://socialsciences.mcmaster.ca/jfox/Books/Companion/>
+
+Dinno, A. (2017). *dunn.test: Dunn's Test of Multiple Comparisons Using Rank Sums*. R package version 1.3.5.
+
+Mangiafico, S.S. (2016). *Summary and Analysis of Extension Program Evaluation in R*, version 1.18.1. Rutgers Cooperative Extension, New Brunswick, NJ. <https://rcompanion.org/handbook/>
+
+Lin, G. (2023). *reactable: Interactive Data Tables Based on 'React Table'*. R package version 0.4.4. <https://glin.github.io/reactable/>
+
+Allaire, J.J., et al. (2023). *rmarkdown: Dynamic Documents for R*. R package version 2.25. <https://rmarkdown.rstudio.com>
+
+MySQL AB (2006). *Sakila Sample Database*. Oracle Corporation. <https://dev.mysql.com/doc/sakila/en/>
+
+---
+
+*Laporan dibuat menggunakan R Markdown dengan koneksi langsung ke MySQL Database Sakila.*  
+*Dibuat oleh: Vincentius Glory Adi Wijaya - M0723088 | Tanggal: `r format(Sys.Date(), '%d %B %Y')`*
